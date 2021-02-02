@@ -1,0 +1,13 @@
+[package]
+name = "MaximumBudgetedAllocation"
+version = "0.1.0"
+authors = ["MitI_7 <MitI_7@outlook.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rand = "0.6"
+num = "0.3.0"
+ordered-float = "2.0.0"
+num-traits = "0.2.12"
