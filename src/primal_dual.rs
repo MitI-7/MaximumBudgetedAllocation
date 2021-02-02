@@ -1,5 +1,4 @@
 use crate::assignment::Assignment;
-use crate::campaigns::Campaigns;
 use num::ToPrimitive;
 use num_traits::{FromPrimitive, NumAssign};
 use ordered_float::OrderedFloat;
@@ -8,11 +7,12 @@ use std::collections::VecDeque;
 use std::fmt::Display;
 
 pub struct PrimalDual<N: NumAssign + ToPrimitive + FromPrimitive + Copy + PartialOrd + Display> {
-    agents: Campaigns<N>,
-
     num_agents: usize,
     num_items: usize,
     epsilon: f64,
+
+    budgets: Vec<N>,
+    consumptions: Vec<N>,
 
     beta: f64,
     item_agent: Vec<BinaryHeap<(OrderedFloat<f64>, u64, usize)>>, // item_agent[item_id] = [(price, num_update, agent_id), ...]
@@ -29,10 +29,11 @@ pub struct PrimalDual<N: NumAssign + ToPrimitive + FromPrimitive + Copy + Partia
 impl<N: NumAssign + ToPrimitive + FromPrimitive + Copy + PartialOrd + Display> PrimalDual<N> {
     pub fn new(num_agents: usize, num_items: usize, epsilon: f64) -> Self {
         PrimalDual {
-            agents: Campaigns::new(num_agents),
             num_agents: num_agents,
             num_items: num_items,
             epsilon: epsilon,
+            budgets: vec![N::zero(); num_agents],
+            consumptions: vec![N::zero(); num_agents],
             beta: 0.0,
             item_agent: vec![BinaryHeap::new(); num_items],
             alpha: vec![0.0; num_agents],
@@ -44,17 +45,17 @@ impl<N: NumAssign + ToPrimitive + FromPrimitive + Copy + PartialOrd + Display> P
     }
 
     pub fn set_budget(&mut self, agent_id: usize, budget: N) {
-        self.agents.set_budget(agent_id, budget);
+        self.budgets[agent_id] = budget;
     }
 
     pub fn set_bid(&mut self, agent_id: usize, item_id: usize, bid: N) {
         debug_assert!(bid > N::zero());
-        debug_assert!(bid <= self.agents.budgets[agent_id]);
+        debug_assert!(bid <= self.budgets[agent_id]);
 
         if bid <= N::zero() {
             return;
         }
-        if bid > self.agents.budgets[agent_id] {
+        if bid > self.budgets[agent_id] {
             return;
         }
 
@@ -70,7 +71,7 @@ impl<N: NumAssign + ToPrimitive + FromPrimitive + Copy + PartialOrd + Display> P
             }
         }
 
-        let b = bid.to_f64().unwrap() / self.agents.budgets[agent_id].to_f64().unwrap();
+        let b = bid.to_f64().unwrap() / self.budgets[agent_id].to_f64().unwrap();
         if b > self.beta {
             self.beta = b;
         }
@@ -104,11 +105,11 @@ impl<N: NumAssign + ToPrimitive + FromPrimitive + Copy + PartialOrd + Display> P
                         }
 
                         // erase item_id from agent_id
-                        self.agents.consumptions[agent_id] -= self.data[agent_id][item_id];
+                        self.consumptions[agent_id] -= self.data[agent_id][item_id];
 
                         // insert item_id to max_agent_id
                         self.assignment_temp[max_agent_id].push_front(item_id);
-                        self.agents.consumptions[max_agent_id] += self.data[max_agent_id][item_id];
+                        self.consumptions[max_agent_id] += self.data[max_agent_id][item_id];
 
                         if self.is_paid_for(agent_id) {
                             break;
@@ -118,7 +119,7 @@ impl<N: NumAssign + ToPrimitive + FromPrimitive + Copy + PartialOrd + Display> P
                     if num_unique == num {
                         while !self.assignment_temp[agent_id].is_empty() && !self.is_paid_for(agent_id) {
                             let item_id = self.assignment_temp[agent_id].pop_front().unwrap();
-                            self.agents.consumptions[agent_id] -= self.data[agent_id][item_id];
+                            self.consumptions[agent_id] -= self.data[agent_id][item_id];
                         }
                     }
 
@@ -145,7 +146,7 @@ impl<N: NumAssign + ToPrimitive + FromPrimitive + Copy + PartialOrd + Display> P
 
             let bid = self.data[agent_id as usize][item_id];
             self.assignment_temp[agent_id as usize].push_back(item_id);
-            self.agents.consumptions[agent_id as usize] += bid;
+            self.consumptions[agent_id as usize] += bid;
         }
     }
 
@@ -173,7 +174,7 @@ impl<N: NumAssign + ToPrimitive + FromPrimitive + Copy + PartialOrd + Display> P
     }
 
     fn is_paid_for(&self, agent_id: usize) -> bool {
-        self.agents.consumptions[agent_id].to_f64().unwrap() <= self.U(agent_id) * self.agents.budgets[agent_id].to_f64().unwrap()
+        self.consumptions[agent_id].to_f64().unwrap() <= self.U(agent_id) * self.budgets[agent_id].to_f64().unwrap()
     }
 
     #[allow(non_snake_case)]
@@ -183,11 +184,10 @@ impl<N: NumAssign + ToPrimitive + FromPrimitive + Copy + PartialOrd + Display> P
     }
 
     pub fn make_valid_assignment(&mut self) -> Assignment<N> {
-        let mut temp_agents = Campaigns::new(self.num_agents);
+        let mut temp_budgets = self.budgets.clone();
         let mut assignment = Assignment::new(self.num_agents);
         for agent_id in 0..self.num_agents {
-            temp_agents.set_budget(agent_id, self.agents.budgets[agent_id]);
-            assignment.set_budget(agent_id, self.agents.budgets[agent_id]);
+            assignment.set_budget(agent_id, self.budgets[agent_id]);
         }
 
         // greedy
@@ -202,8 +202,8 @@ impl<N: NumAssign + ToPrimitive + FromPrimitive + Copy + PartialOrd + Display> P
             bid_items.sort();
             bid_items.reverse();
             for (bid, item_id) in bid_items {
-                if temp_agents.can_assignment(agent_id, N::from_f64(bid.to_f64().unwrap()).unwrap()) {
-                    temp_agents.consume(agent_id, N::from_f64(bid.to_f64().unwrap()).unwrap());
+                if temp_budgets[agent_id] - N::from_f64(bid.to_f64().unwrap()).unwrap() >= N::zero() {
+                    temp_budgets[agent_id] -= N::from_f64(bid.to_f64().unwrap()).unwrap();
                     assignment.assign(agent_id, item_id, N::from_f64(bid.to_f64().unwrap()).unwrap());
                     used_item[item_id] = true;
                 }
@@ -219,7 +219,7 @@ impl<N: NumAssign + ToPrimitive + FromPrimitive + Copy + PartialOrd + Display> P
                 let (_price, _num, agent_id) = self.item_agent[item_id].pop().unwrap();
                 let bid = self.data[agent_id][item_id];
 
-                if temp_agents.can_assignment(agent_id, bid) {
+                if temp_budgets[agent_id] - bid >= N::zero() {
                     v.push((OrderedFloat(bid.to_f64().unwrap()), agent_id));
                 }
             }
@@ -227,8 +227,8 @@ impl<N: NumAssign + ToPrimitive + FromPrimitive + Copy + PartialOrd + Display> P
             v.reverse();
 
             for (bid, agent_id) in &v {
-                if temp_agents.can_assignment(*agent_id, N::from_f64(bid.to_f64().unwrap()).unwrap()) {
-                    temp_agents.consume(*agent_id, N::from_f64(bid.to_f64().unwrap()).unwrap());
+                if temp_budgets[*agent_id] - N::from_f64(bid.to_f64().unwrap()).unwrap() >= N::zero() {
+                    temp_budgets[*agent_id] -= N::from_f64(bid.to_f64().unwrap()).unwrap();
                     assignment.assign(*agent_id, item_id, N::from_f64(bid.to_f64().unwrap()).unwrap());
                     used_item[item_id] = true;
                     break;

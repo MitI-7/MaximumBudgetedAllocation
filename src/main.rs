@@ -1,12 +1,11 @@
 mod assignment;
-mod campaigns;
 mod primal_dual;
 
 fn main() {
     let num_agents = 2;
     let num_items = 3;
 
-    let mut solver = primal_dual::PrimalDual::<u64>::new(num_agents, num_items, 0.01);
+    let mut solver = primal_dual::PrimalDual::<i64>::new(num_agents, num_items, 0.01);
 
     // set budget
     // solver.set_budget(agent_id, budget)

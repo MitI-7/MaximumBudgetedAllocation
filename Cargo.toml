@@ -1,5 +1,5 @@
 [package]
-name = "MaximumBudgetedAllocation"
+name = "maximum_budgeted_allocation"
 version = "0.1.0"
 authors = ["MitI_7 <MitI_7@outlook.com>"]
 edition = "2018"
