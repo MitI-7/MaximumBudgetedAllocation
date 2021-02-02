@@ -72,9 +72,7 @@ impl<N: NumAssign + ToPrimitive + FromPrimitive + Copy + PartialOrd + Display> P
         }
 
         let b = bid.to_f64().unwrap() / self.budgets[agent_id].to_f64().unwrap();
-        if b > self.beta {
-            self.beta = b;
-        }
+        self.beta = self.beta.max(b);
     }
 
     pub fn solve(&mut self) {
